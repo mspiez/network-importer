@@ -51,8 +51,8 @@ class NautobotAPIInventory(NetworkImporterInventory):
             else:
                 build_filter_params(self.limit.split((",")), self.filter_parameters)
 
-        if "exclude" not in self.filter_parameters:
-            self.filter_parameters["exclude"] = "config_context"
+        # if "exclude" not in self.filter_parameters:
+        #     self.filter_parameters["exclude"] = "config_context"
 
         # Instantiate nautobot session using pynautobot
         self.session = pynautobot.api(url=self.settings.address, token=self.settings.token)
