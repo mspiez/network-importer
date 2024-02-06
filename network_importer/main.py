@@ -128,6 +128,9 @@ class NetworkImporter:
             self.network.load()
         except ValidationError as exc:
             print(f"Configuration not valid, found {len(exc.errors())} error(s)")
+            # print(network_adapter_path)
+            # print(network_adapter_settings)
+            # print(dir(network_adapter))
             for error in exc.errors():
                 print(f"  {'/'.join(error['loc'])} | {error['msg']} ({error['type']})")
             sys.exit(1)

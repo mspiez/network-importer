@@ -33,7 +33,7 @@ LOGGER = logging.getLogger("network-importer")
 class NetworkImporterAdapter(BaseAdapter):
     """Adapter to import data from a network based on Batfish."""
 
-    top_level = ["site", "device", "cable"]
+    top_level = ["location", "device", "cable"]
 
     type = "Network"
 
@@ -41,11 +41,11 @@ class NetworkImporterAdapter(BaseAdapter):
 
     def load(self):
         """Initialize batfish and load all data from the network in the local cache."""
-        sites = {}
+        locations = {}
 
         self.init_batfish()
 
-        # Create all devices and site object from Nornir Inventory
+        # Create all devices and location object from Nornir Inventory
         for hostname, host in self.nornir.inventory.hosts.items():
             if len(self.bfi.q.nodeProperties(nodes=f'"{hostname}"').answer()) == 0:
                 self.nornir.inventory.hosts[hostname].has_config = False
@@ -54,15 +54,15 @@ class NetworkImporterAdapter(BaseAdapter):
 
             self.nornir.inventory.hosts[hostname].has_config = True
 
-            # Check that the host site_name is in the sites dictionary.
-            if host.site_name not in sites:
-                site = self.site(name=host.site_name)
-                sites[host.site_name] = site
-                self.add(site)
+            # Check that the host location_id is in the locations dictionary.
+            if host.location_id not in locations:
+                location = self.location(uuid=host.location_id)
+                locations[host.location_id] = location
+                self.add(location)
             else:
-                site = sites[host.site_name]
+                location = locations[host.location_id]
 
-            device = self.device(name=hostname, site_name=host.site_name)
+            device = self.device(name=hostname, location_id=host.location_id)
             self.add(device)
 
         if config.SETTINGS.main.import_cabling in ["lldp", "cdp"] or config.SETTINGS.main.import_vlans in [True, "cli"]:
@@ -114,7 +114,7 @@ class NetworkImporterAdapter(BaseAdapter):
         Args:
             device (Device): Device object
         """
-        site = self.get(self.site, identifier=device.site_name)
+        location = self.get(self.location, identifier=device.location_id)
 
         interface_vlans_mapping = defaultdict(list)
         if config.SETTINGS.main.import_vlans:
@@ -122,10 +122,10 @@ class NetworkImporterAdapter(BaseAdapter):
             for bf_vlan in bf_vlans.frame().itertuples():
                 if config.SETTINGS.main.import_vlans in ["config", True]:
                     vlan, created = self.get_or_add(
-                        self.vlan(name=f"vlan-{bf_vlan.VLAN_ID}", vid=bf_vlan.VLAN_ID, site_name=site.name)
+                        self.vlan(name=f"vlan-{bf_vlan.VLAN_ID}", vid=bf_vlan.VLAN_ID, location_id=location.uuid)
                     )
                     if created:
-                        site.add_child(vlan)
+                        location.add_child(vlan)
 
                     vlan.add_device(device.get_unique_id())
 
@@ -134,25 +134,25 @@ class NetworkImporterAdapter(BaseAdapter):
                     if intf.hostname != device.name.lower():
                         continue
                     interface_vlans_mapping[intf.interface].append(
-                        self.vlan.create_unique_id(vid=bf_vlan.VLAN_ID, site_name=site.name)
+                        self.vlan.create_unique_id(vid=bf_vlan.VLAN_ID, location_id=location.uuid)
                     )
 
         intfs = self.bfi.q.interfaceProperties(nodes=f'"{device.name}"').answer().frame()
         for _, intf in intfs.iterrows():
             self.load_batfish_interface(
-                site=site,
+                location=location,
                 device=device,
                 intf=dict(intf),
                 interface_vlans=interface_vlans_mapping[intf["Interface"].interface],
             )
 
     def load_batfish_interface(
-        self, site, device, intf, interface_vlans=[]
+        self, location, device, intf, interface_vlans=[]
     ):  # pylint: disable=dangerous-default-value,unused-argument,too-many-statements,too-many-branches,too-many-locals
         """Load an interface for a given device from Batfish Data, including IP addresses and prefixes.
 
         Args:
-            site (Site): Site object
+            location (Location): Location object
             device (Device): Device object
             intf (dict): Batfish interface object in Dict format
             interface_vlans (list[str], optional): List of vlan uis associated with this interface
@@ -214,8 +214,8 @@ class NetworkImporterAdapter(BaseAdapter):
         if interface.mode is None and interface.switchport_mode:
             if intf["Encapsulation_VLAN"]:
                 interface.mode = "L3_SUB_VLAN"
-                vlan = self.vlan(vid=intf["Encapsulation_VLAN"], site_name=site.name)
-                vlan, _ = self.get_or_create_vlan(vlan, site)
+                vlan = self.vlan(vid=intf["Encapsulation_VLAN"], location_id=location.uuid)
+                vlan, _ = self.get_or_create_vlan(vlan, location)
                 if import_vlans:
                     interface.allowed_vlans = [vlan.get_unique_id()]
                     interface_vlans = interface.allowed_vlans
@@ -225,16 +225,16 @@ class NetworkImporterAdapter(BaseAdapter):
         if interface.mode == "TRUNK":
             vids = expand_vlans_list(intf["Allowed_VLANs"])
             for vid in vids:
-                vlan = self.vlan(vid=vid, site_name=site.name)
+                vlan = self.vlan(vid=vid, location_id=location.id)
                 if create_vlans:
-                    vlan, _ = self.get_or_create_vlan(vlan, site)
+                    vlan, _ = self.get_or_create_vlan(vlan, location)
                 if import_vlans:
                     interface.allowed_vlans.append(vlan.get_unique_id())
 
             interface_vlans = interface.allowed_vlans
 
             if intf["Native_VLAN"]:
-                native_vlan = self.vlan(vid=intf["Native_VLAN"], site_name=site.name)
+                native_vlan = self.vlan(vid=intf["Native_VLAN"], location_id=location.id)
                 if create_vlans:
                     native_vlan, _ = self.get_or_create_vlan(native_vlan)
                 if import_vlans:
@@ -242,9 +242,9 @@ class NetworkImporterAdapter(BaseAdapter):
                     interface_vlans = [interface.access_vlan]
 
         elif interface.mode == "ACCESS" and intf["Access_VLAN"]:
-            vlan = self.vlan(vid=intf["Access_VLAN"], site_name=site.name)
+            vlan = self.vlan(vid=intf["Access_VLAN"], location_id=location.id)
             if create_vlans:
-                vlan, _ = self.get_or_create_vlan(vlan, site)
+                vlan, _ = self.get_or_create_vlan(vlan, location)
             if import_vlans:
                 interface.access_vlan = vlan.get_unique_id()
                 interface_vlans = [interface.access_vlan]
@@ -262,18 +262,18 @@ class NetworkImporterAdapter(BaseAdapter):
 
         for prefix in intf["All_Prefixes"]:
             self.load_batfish_ip_address(
-                site=site, device=device, interface=interface, address=prefix, interface_vlans=interface_vlans
+                location=location, device=device, interface=interface, address=prefix, interface_vlans=interface_vlans
             )
 
         return interface
 
     def load_batfish_ip_address(
-        self, site, device, interface, address, interface_vlans=[]
+        self, location, device, interface, address, interface_vlans=[]
     ):  # pylint: disable=dangerous-default-value,too-many-arguments
         """Load IP address for a given interface from Batfish.
 
         Args:
-            site (Site): Site object
+            location (Location): Location object
             device (Device): Device object
             interface (Interface): Interface object
             address (str): IP address in string format
@@ -310,16 +310,16 @@ class NetworkImporterAdapter(BaseAdapter):
                     interface_vlans,
                 )
 
-            self.add_prefix_from_ip(ip_address=ip_address, site=site, vlan=vlan)
+            self.add_prefix_from_ip(ip_address=ip_address, location=location, vlan=vlan)
 
         return ip_address
 
-    def add_prefix_from_ip(self, ip_address, site, vlan=None):
+    def add_prefix_from_ip(self, ip_address, location, vlan=None):
         """Try to extract a prefix from an IP address and save it locally.
 
         Args:
             ip_address (IPAddress): DiffSync IPAddress object
-            site (Site): Site object the prefix is part of.
+            location (Location): Location object the prefix is part of.
             vlan (str): Identifier of the vlan
 
         Returns:
@@ -331,20 +331,21 @@ class NetworkImporterAdapter(BaseAdapter):
             return False
 
         try:
-            prefix_obj = self.get(self.prefix, identifier=dict(site_name=site.name, prefix=prefix))
+            prefix_obj = self.get(self.prefix, identifier=dict(location_id=location.uuid, prefix=prefix))
         except ObjectNotFound:
             prefix_obj = None
 
         if not prefix_obj:
-            prefix_obj = self.prefix(prefix=str(prefix), site_name=site.name, vlan=vlan)
+            prefix_obj = self.prefix(prefix=str(prefix), location_id=location.uuid, vlan=vlan)
+            # print(f"Prefix Diffsync: {prefix_obj}")
             self.add(prefix_obj)
-            site.add_child(prefix_obj)
+            location.add_child(prefix_obj)
             LOGGER.debug("Added Prefix %s from batfish", prefix)
 
         if prefix_obj and vlan and not prefix_obj.vlan:
             prefix_obj.vlan = vlan
             LOGGER.debug("Updated Prefix %s with vlan %s", prefix, vlan)
-
+        # print(f"All prefixes diffsync Batfish: {self.get_all(self.prefix)}")
         return prefix_obj
 
     def load_cabling(self):
@@ -384,13 +385,13 @@ class NetworkImporterAdapter(BaseAdapter):
                 continue
 
             device = self.get(self.device, identifier=dev_name)
-            site = self.get(self.site, identifier=device.site_name)
+            location = self.get(self.location, identifier=device.location_id)
 
             for vlan in items[1].result["vlans"]:
-                new_vlan, created = self.get_or_add(self.vlan(vid=vlan["vid"], name=vlan["name"], site_name=site.name))
+                new_vlan, created = self.get_or_add(self.vlan(vid=vlan["vid"], name=vlan["name"], location_id=location.id))
 
                 if created:
-                    site.add_child(new_vlan)
+                    location.add_child(new_vlan)
 
                 new_vlan.add_device(device.get_unique_id())
 

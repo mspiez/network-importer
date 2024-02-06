@@ -9,7 +9,7 @@ from diffsync import DiffSync, DiffSyncModel  # pylint: disable=unused-import
 import network_importer.config as config  # pylint: disable=import-error
 from network_importer.adapters.netbox_api.exceptions import NetboxObjectNotValid
 from network_importer.models import (  # pylint: disable=import-error
-    Site,
+    Location,
     Device,
     Interface,
     IPAddress,
@@ -21,8 +21,8 @@ from network_importer.models import (  # pylint: disable=import-error
 LOGGER = logging.getLogger("network-importer")
 
 
-class NetboxSite(Site):
-    """Extension of the Site model."""
+class NetboxSite(Location):
+    """Extension of the Location model."""
 
     remote_id: Optional[int]
 
@@ -443,8 +443,8 @@ class NetboxPrefix(Prefix):
         """
         nb_params = {"prefix": self.prefix, "status": "active"}
 
-        site = self.diffsync.get(self.diffsync.site, identifier=self.site_name)
-        nb_params["site"] = site.remote_id
+        location = self.diffsync.get(self.diffsync.location, identifier=self.location_name)
+        nb_params["location"] = location.remote_id
 
         if "vlan" in attrs and attrs["vlan"]:
             try:
@@ -535,8 +535,8 @@ class NetboxVlan(Vlan):
         elif not self.name:
             nb_params["name"] = f"vlan-{self.vid}"
 
-        site = self.diffsync.get(self.diffsync.site, identifier=self.site_name)
-        nb_params["site"] = site.remote_id
+        location = self.diffsync.get(self.diffsync.location, identifier=self.location_name)
+        nb_params["location"] = location.remote_id
 
         if "associated_devices" in attrs:
             nb_params["tags"] = []
@@ -557,18 +557,18 @@ class NetboxVlan(Vlan):
         return nb_params
 
     @classmethod
-    def create_from_pynetbox(cls, diffsync: "DiffSync", obj, site_name):
+    def create_from_pynetbox(cls, diffsync: "DiffSync", obj, location_name):
         """Create a new NetboxVlan object from a pynetbox vlan object.
 
         Args:
             diffsync (DiffSync): Netbox API Adapter
             obj (pynetbox.models.ipam.Vlans): Vlan object returned by Pynetbox
-            site_name (str): name of the site associated with this vlan
+            location_name (str): name of the location associated with this vlan
 
         Returns:
             NetboxVlan: DiffSync object
         """
-        item = cls(vid=obj.vid, site_name=site_name, name=obj.name, remote_id=obj.id)
+        item = cls(vid=obj.vid, location_name=location_name, name=obj.name, remote_id=obj.id)
 
         # Check the existing tags to learn which device is already associated with this vlan
         # Exclude all devices that are not part of the inventory
@@ -674,8 +674,8 @@ class NetboxVlanPre29(NetboxVlan):
         elif not self.name:
             nb_params["name"] = f"vlan-{self.vid}"
 
-        site = self.diffsync.get(self.diffsync.site, identifier=self.site_name)
-        nb_params["site"] = site.remote_id
+        location = self.diffsync.get(self.diffsync.location, identifier=self.location_name)
+        nb_params["location"] = location.remote_id
 
         if "associated_devices" in attrs:
             nb_params["tags"] = [f"device={device}" for device in attrs["associated_devices"]]
@@ -683,18 +683,18 @@ class NetboxVlanPre29(NetboxVlan):
         return nb_params
 
     @classmethod
-    def create_from_pynetbox(cls, diffsync: "DiffSync", obj, site_name):
+    def create_from_pynetbox(cls, diffsync: "DiffSync", obj, location_name):
         """Create a new NetboxVlan object from a pynetbox vlan object for version of NetBox prior to 2.9.
 
         Args:
             diffsync (DiffSync): Netbox API Adapter
             obj (pynetbox.models.ipam.Vlans): Vlan object returned by Pynetbox
-            site_name (str): name of the site associated with this vlan
+            location_name (str): name of the location associated with this vlan
 
         Returns:
             NetboxVlan: DiffSync object
         """
-        item = cls(vid=obj.vid, site_name=site_name, name=obj.name, remote_id=obj.id)
+        item = cls(vid=obj.vid, location_name=location_name, name=obj.name, remote_id=obj.id)
 
         # Check the existing tags to learn which device is already associated with this vlan
         # Exclude all vlans that are not part of the inventory

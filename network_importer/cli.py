@@ -88,7 +88,7 @@ def init(config_file):
 @click.option(
     "--limit",
     default=False,
-    help="limit the execution on a specific device or group of devices --limit=device1 or --limit='site=sitea' ",
+    help="limit the execution on a specific device or group of devices --limit=device1 or --limit='location=sitea' ",
     type=str,
 )
 @click.option("--update-configs", is_flag=True, help="Pull the latest configs from the devices")
@@ -129,7 +129,7 @@ def apply(config_file, limit, debug, update_configs):
 @click.option(
     "--limit",
     default=False,
-    help="limit the execution on a specific device or group of devices --limit=device1 or --limit='site=sitea' ",
+    help="limit the execution on a specific device or group of devices --limit=device1 or --limit='location=sitea' ",
     type=str,
 )
 @click.option("--update-configs", is_flag=True, help="Pull the latest configs from the devices")
@@ -169,7 +169,7 @@ def check(config_file, limit, debug, update_configs):
 @click.option(
     "--limit",
     default=False,
-    help="limit the execution on a specific device or group of devices --limit=device1 or --limit='site=sitea' ",
+    help="limit the execution on a specific device or group of devices --limit=device1 or --limit='location=sitea' ",
     type=str,
 )
 @click.option("--check-connectivity", is_flag=True, help="Check if the devices are reachable on port 22")

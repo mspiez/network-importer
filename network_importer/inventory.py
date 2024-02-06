@@ -10,8 +10,8 @@ from nornir.core.inventory import Host, Group, ConnectionOptions
 class NetworkImporterHost(Host):
     """Network Importer Host Class."""
 
-    site_name: Optional[str]
-    """Name of the site this device belong to."""
+    location_id: Optional[str]
+    """Name of the location this device belong to."""
 
     is_reacheable: Optional[bool]
     """Global Flag to indicate if we are able to connect to a device"""

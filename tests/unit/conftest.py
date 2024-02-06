@@ -16,7 +16,7 @@ from network_importer.adapters.netbox_api.adapter import NetBoxAPIAdapter
 from network_importer.adapters.netbox_api.models import NetboxSite, NetboxDevice, NetboxInterface, NetboxVlan
 
 from network_importer.adapters.nautobot_api.adapter import NautobotAPIAdapter
-from network_importer.adapters.nautobot_api.models import NautobotSite, NautobotDevice, NautobotInterface, NautobotVlan
+from network_importer.adapters.nautobot_api.models import NautobotLocation, NautobotDevice, NautobotInterface, NautobotVlan
 
 
 @pytest.fixture
@@ -259,7 +259,7 @@ def nautobot_api_base():
     diffsync = NautobotAPIAdapter(nornir=None, settings={})
     diffsync.nautobot = pynautobot.api(url="http://mock_nautobot", token="1234567890")
 
-    diffsync.add(NautobotSite(name="HQ", remote_id="a325e477-62fe-47f0-8b67-acf411b1868f"))
+    diffsync.add(NautobotLocation(name="HQ", remote_id="a325e477-62fe-47f0-8b67-acf411b1868f"))
     diffsync.add(NautobotDevice(name="HQ-CORE-SW02", site_name="HQ", remote_id="e0633a07-c3e2-41b0-a1df-4627392acf0a"))
     diffsync.add(
         NautobotInterface(

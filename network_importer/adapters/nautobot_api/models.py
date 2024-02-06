@@ -9,7 +9,7 @@ from diffsync import DiffSync, DiffSyncModel  # pylint: disable=unused-import
 import network_importer.config as config  # pylint: disable=import-error
 from network_importer.adapters.nautobot_api.exceptions import NautobotObjectNotValid
 from network_importer.models import (  # pylint: disable=import-error
-    Site,
+    Location,
     Device,
     Interface,
     IPAddress,
@@ -21,8 +21,8 @@ from network_importer.models import (  # pylint: disable=import-error
 LOGGER = logging.getLogger("network-importer")
 
 
-class NautobotSite(Site):
-    """Extension of the Site model."""
+class NautobotLocation(Location):
+    """Extension of the Location model."""
 
     remote_id: Optional[str]
 
@@ -50,7 +50,7 @@ class NautobotDevice(Device):
         tag = self.diffsync.nautobot.extras.tags.get(name=f"device={self.name}")
         if not tag:
             tag = self.diffsync.nautobot.extras.tags.create(
-                name=f"device={self.name}", slug=f"device__{''.join(c if c.isalnum() else '_' for c in self.name)}"
+                name=f"device={self.name}",
             )
 
         self.device_tag_id = tag.id
@@ -176,7 +176,7 @@ class NautobotInterface(Interface):
 
         try:
             nb_params = item.translate_attrs_for_nautobot(attrs)
-            intf = diffsync.nautobot.dcim.interfaces.create(**nb_params)
+            intf = diffsync.nautobot.dcim.interfaces.create(**nb_params, status="Active")
             LOGGER.info("Created interface %s (%s) in Nautobot", intf.name, intf.id)
         except pynautobot.core.query.RequestError as exc:
             LOGGER.warning(
@@ -298,6 +298,7 @@ class NautobotIPAddress(IPAddress):
                 self.diffsync.interface,
                 identifier=dict(device_name=self.device_name, name=self.interface_name),
             )
+            nb_params["status"] = "Active"
             nb_params["assigned_object_type"] = "dcim.interface"
             nb_params["assigned_object_id"] = interface.remote_id
         except ObjectNotFound:
@@ -317,7 +318,8 @@ class NautobotIPAddress(IPAddress):
             NautobotIPAddress: DiffSync object
         """
         item = cls(
-            address=obj.address, device_name=device_name, interface_name=obj.assigned_object.name, remote_id=obj.id
+            # address=obj.address, device_name=device_name, interface_name=obj.assigned_object.name, remote_id=obj.id
+            address=obj.address, device_name=device_name, interface_name=obj.interfaces[0].name, remote_id=obj.id
         )
 
         item = diffsync.apply_model_flag(item, obj)
@@ -334,7 +336,13 @@ class NautobotIPAddress(IPAddress):
             item = super().create(ids=ids, diffsync=diffsync, attrs=attrs)
             nb_params = item.translate_attrs_for_nautobot(attrs)
             # Add status because it's a mandatory field.
-            nb_params["status"] = "active"
+            # nb_params["status"] = "Active"
+            interface_id = nb_params.get("assigned_object_id")
+            interface = diffsync.nautobot.dcim.interfaces.get(id=interface_id)
+            location_id = interface.device.location.id
+            parent_prefix = diffsync.nautobot.ipam.prefixes.get(location=location_id, prefix=nb_params.get("address"))
+            nb_params["parent"] = parent_prefix.id
+            print(f"nb_parms: {nb_params}")
             ip_address = diffsync.nautobot.ipam.ip_addresses.create(**nb_params)
         except pynautobot.core.query.RequestError as exc:
             LOGGER.warning("Unable to create the ip address %s in %s (%s)", ids["address"], diffsync.name, exc.error)
@@ -342,6 +350,10 @@ class NautobotIPAddress(IPAddress):
 
         LOGGER.info("Created IP %s (%s) in Nautobot", ip_address.address, ip_address.id)
         item.remote_id = ip_address.id
+        
+        LOGGER.info("IP Address %s (%s) assigned to Interface %s (%s)", ip_address.address, ip_address.id, interface.name, interface.id)
+        # interface.ip_addresses.add(ip_address.id)
+        diffsync.nautobot.ipam.ip_address_to_interface.create(interface=interface_id, ip_address=ip_address.id)
 
         return item
 
@@ -407,10 +419,10 @@ class NautobotPrefix(Prefix):
         Returns:
             dict: Nautobot parameters
         """
-        nb_params = {"prefix": self.prefix, "status": "active"}
+        nb_params = {"prefix": self.prefix, "status": "Active"}
 
-        site = self.diffsync.get(self.diffsync.site, identifier=self.site_name)
-        nb_params["site"] = site.remote_id
+        location = self.diffsync.get(self.diffsync.location, identifier=self.location_id)
+        nb_params["location"] = location.remote_id
 
         if "vlan" in attrs and attrs["vlan"]:
             try:
@@ -501,8 +513,8 @@ class NautobotVlan(Vlan):
         elif not self.name:
             nb_params["name"] = f"vlan-{self.vid}"
 
-        site = self.diffsync.get(self.diffsync.site, identifier=self.site_name)
-        nb_params["site"] = site.remote_id
+        location = self.diffsync.get(self.diffsync.location, identifier=self.location_id)
+        nb_params["location"] = location.remote_id
 
         # Add Status
         nb_params["status"] = "Active"
@@ -531,18 +543,18 @@ class NautobotVlan(Vlan):
         return nb_params
 
     @classmethod
-    def create_from_pynautobot(cls, diffsync: "DiffSync", obj, site_name):
+    def create_from_pynautobot(cls, diffsync: "DiffSync", obj, location_id):
         """Create a new NautobotVlan object from a pynautobot vlan object.
 
         Args:
             diffsync (DiffSync): Nautobot API Adapter
             obj (pynautobot.models.ipam.Vlans): Vlan object returned by Pynautobot
-            site_name (str): name of the site associated with this vlan
+            location_id (str): name of the location associated with this vlan
 
         Returns:
             NautobotVlan: DiffSync object
         """
-        item = cls(vid=obj.vid, site_name=site_name, name=obj.name, remote_id=obj.id)
+        item = cls(vid=obj.vid, location_id=location_id, name=obj.name, remote_id=obj.id)
 
         # Check the existing tags to learn which device is already associated with this vlan
         # Exclude all devices that are not part of the inventory

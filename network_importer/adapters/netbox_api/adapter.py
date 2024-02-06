@@ -117,7 +117,7 @@ class NetBoxAPIAdapter(BaseAdapter):
 
         self._check_netbox_version()
 
-        sites = {}
+        locations = {}
         device_names = []
 
         results = self.nornir.run(task=query_device_info_from_netbox)
@@ -128,16 +128,16 @@ class NetBoxAPIAdapter(BaseAdapter):
 
             result = items[0].result
             nb_device = result["device"]
-            site_name = nb_device["site"].get("slug")
+            location_name = nb_device["location"].get("name")
 
-            if site_name not in sites:
-                site = self.site(name=site_name, remote_id=nb_device["site"].get("id"))
-                sites[site_name] = site
-                self.add(site)
+            if location_name not in locations:
+                location = self.location(name=location_name, remote_id=nb_device["location"].get("id"))
+                locations[location_name] = location
+                self.add(location)
             else:
-                site = sites[site_name]
+                location = locations[location_name]
 
-            device = self.device(name=device_name, site_name=site_name, remote_id=nb_device["id"])
+            device = self.device(name=device_name, location_name=location_name, remote_id=nb_device["id"])
 
             if nb_device["primary_ip"]:
                 device.primary_ip = nb_device["primary_ip"].get("address")
@@ -145,80 +145,80 @@ class NetBoxAPIAdapter(BaseAdapter):
             device = self.apply_model_flag(device, nb_device)
             self.add(device)
 
-        # Load Prefix and Vlan per site
-        for site in self.get_all(self.site):
-            self.load_netbox_prefix(site)
-            self.load_netbox_vlan(site)
+        # Load Prefix and Vlan per location
+        for location in self.get_all(self.location):
+            self.load_netbox_prefix(location)
+            self.load_netbox_vlan(location)
 
         # Load interfaces and IP addresses for each devices
         devices = self.get_all(self.device)
         for device in devices:
-            site = sites[device.site_name]
+            location = locations[device.location_name]
             device_names.append(device.name)
-            self.load_netbox_device(site=site, device=device)
+            self.load_netbox_device(location=location, device=device)
 
         # Load Cabling
-        for site in self.get_all(self.site):
-            self.load_netbox_cable(site=site, device_names=device_names)
+        for location in self.get_all(self.location):
+            self.load_netbox_cable(location=location, device_names=device_names)
 
-    def load_netbox_device(self, site, device):
+    def load_netbox_device(self, location, device):
         """Import all interfaces and IP address from Netbox for a given device.
 
         Args:
-            site (NetboxSite): Site the device is part of
+            location (NetboxSite): Location the device is part of
             device (DiffSyncModel): Device to import
         """
-        self.load_netbox_interface(site=site, device=device)
-        self.load_netbox_ip_address(site=site, device=device)
+        self.load_netbox_interface(location=location, device=device)
+        self.load_netbox_ip_address(location=location, device=device)
 
-    def load_netbox_prefix(self, site):
-        """Import all prefixes from NetBox for a given site.
+    def load_netbox_prefix(self, location):
+        """Import all prefixes from NetBox for a given location.
 
         Args:
-            site (NetboxSite): Site to import prefix for
+            location (NetboxSite): Location to import prefix for
         """
         if not config.SETTINGS.main.import_prefixes:
             return
 
-        prefixes = self.netbox.ipam.prefixes.filter(site=site.name, status="active")
+        prefixes = self.netbox.ipam.prefixes.filter(location=location.name, status="active")
 
         for nb_prefix in prefixes:
             prefix = self.prefix(
                 prefix=nb_prefix.prefix,
-                site_name=site.name,
+                location_name=location.name,
                 remote_id=nb_prefix.id,
             )
             prefix = self.apply_model_flag(prefix, nb_prefix)
 
             if nb_prefix.vlan:
-                prefix.vlan = self.vlan.create_unique_id(vid=nb_prefix.vlan.vid, site_name=site.name)
+                prefix.vlan = self.vlan.create_unique_id(vid=nb_prefix.vlan.vid, location_name=location.name)
 
             self.add(prefix)
-            site.add_child(prefix)
+            location.add_child(prefix)
 
-    def load_netbox_vlan(self, site):
-        """Import all vlans from NetBox for a given site.
+    def load_netbox_vlan(self, location):
+        """Import all vlans from NetBox for a given location.
 
         Args:
-            site (NetboxSite): Site to import vlan for
+            location (NetboxSite): Location to import vlan for
         """
         if config.SETTINGS.main.import_vlans in [False, "no"]:
             return
 
-        vlans = self.netbox.ipam.vlans.filter(site=site.name)
+        vlans = self.netbox.ipam.vlans.filter(location=location.name)
 
         for nb_vlan in vlans:
-            vlan = self.vlan.create_from_pynetbox(diffsync=self, obj=nb_vlan, site_name=site.name)
+            vlan = self.vlan.create_from_pynetbox(diffsync=self, obj=nb_vlan, location_name=location.name)
             self.add(vlan)
-            site.add_child(vlan)
+            location.add_child(vlan)
 
     def convert_interface_from_netbox(
-        self, device, intf, site=None
+        self, device, intf, location=None
     ):  # pylint: disable=too-many-branches,too-many-statements
         """Convert PyNetBox interface object to NetBoxInterface model.
 
         Args:
-            site (NetBoxSite): [description]
+            location (NetBoxSite): [description]
             device (NetBoxDevice): [description]
             intf (pynetbox interface object): [description]
         """
@@ -284,20 +284,20 @@ class NetBoxAPIAdapter(BaseAdapter):
         elif intf.type and intf.type.value == 1600:
             interface.speed = 100000000000
 
-        if site and intf.tagged_vlans and import_vlans:
+        if location and intf.tagged_vlans and import_vlans:
             for vid in [v.vid for v in intf.tagged_vlans]:
                 try:
-                    vlan = self.get(self.vlan, identifier=dict(vid=vid, site_name=site.name))
+                    vlan = self.get(self.vlan, identifier=dict(vid=vid, location_name=location.name))
                     interface.allowed_vlans.append(vlan.get_unique_id())
                 except ObjectNotFound:
-                    LOGGER.debug("%s | VLAN %s is not present for site %s", self.name, vid, site.name)
+                    LOGGER.debug("%s | VLAN %s is not present for location %s", self.name, vid, location.name)
 
-        if site and intf.untagged_vlan and import_vlans:
+        if location and intf.untagged_vlan and import_vlans:
             try:
-                vlan = self.get(self.vlan, identifier=dict(vid=intf.untagged_vlan.vid, site_name=site.name))
+                vlan = self.get(self.vlan, identifier=dict(vid=intf.untagged_vlan.vid, location_name=location.name))
                 interface.access_vlan = vlan.get_unique_id()
             except ObjectNotFound:
-                LOGGER.debug("%s | VLAN %s is not present for site %s", self.name, intf.untagged_vlan.vid, site.name)
+                LOGGER.debug("%s | VLAN %s is not present for location %s", self.name, intf.untagged_vlan.vid, location.name)
 
         if intf.connected_endpoint_type:
             interface.connected_endpoint_type = intf.connected_endpoint_type
@@ -308,24 +308,24 @@ class NetBoxAPIAdapter(BaseAdapter):
 
         return new_intf
 
-    def load_netbox_interface(self, site, device):
+    def load_netbox_interface(self, location, device):
         """Import all interfaces & Ips from Netbox for a given device.
 
         Args:
-            site (NetboxSite): DiffSync object representing a site
+            location (NetboxSite): DiffSync object representing a location
             device (NetboxDevice): DiffSync object representing the device
         """
         intfs = self.netbox.dcim.interfaces.filter(device=device.name)
         for intf in intfs:
-            self.convert_interface_from_netbox(site=site, device=device, intf=intf)
+            self.convert_interface_from_netbox(location=location, device=device, intf=intf)
 
         LOGGER.debug("%s | Found %s interfaces for %s", self.name, len(intfs), device.name)
 
-    def load_netbox_ip_address(self, site, device):  # pylint: disable=unused-argument
+    def load_netbox_ip_address(self, location, device):  # pylint: disable=unused-argument
         """Import all IP addresses from NetBox for a given device.
 
         Args:
-            site (NetboxSite): DiffSync object representing a site
+            location (NetboxSite): DiffSync object representing a location
             device (NetboxDevice): DiffSync object representing the device
         """
         if not config.SETTINGS.main.import_ips:
@@ -348,16 +348,16 @@ class NetBoxAPIAdapter(BaseAdapter):
 
         LOGGER.debug("%s | Found %s ip addresses for %s", self.name, len(ips), device.name)
 
-    def load_netbox_cable(self, site, device_names):
-        """Import all Cables from NetBox for a given site.
+    def load_netbox_cable(self, location, device_names):
+        """Import all Cables from NetBox for a given location.
 
         If both devices at each end of the cables are not in the list of device_names, the cable will be ignored.
 
         Args:
-            site (Site): Site object to import cables for
+            location (Location): Location object to import cables for
             device_names (list): List of device names that are part of the inventory
         """
-        cables = self.netbox.dcim.cables.filter(site=site.name)
+        cables = self.netbox.dcim.cables.filter(location=location.name)
 
         nbr_cables = 0
         for nb_cable in cables:
@@ -410,7 +410,7 @@ class NetBoxAPIAdapter(BaseAdapter):
 
             nbr_cables += 1
 
-        LOGGER.debug("%s | Found %s cables in netbox for %s", self.name, nbr_cables, site.name)
+        LOGGER.debug("%s | Found %s cables in netbox for %s", self.name, nbr_cables, location.name)
 
     def get_intf_from_netbox(self, device_name, intf_name):
         """Get an interface from NetBox based on the name of the device and the name of the interface.

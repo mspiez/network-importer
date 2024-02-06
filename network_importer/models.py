@@ -17,17 +17,17 @@ from typing import List, Optional
 from diffsync import DiffSyncModel
 
 
-class Site(DiffSyncModel):
-    """Site Model based on DiffSyncModel.
+class Location(DiffSyncModel):
+    """Location Model based on DiffSyncModel.
 
-    A site must have a unique name and can be composed of Vlans and Prefixes.
+    A location must have a unique name and can be composed of Vlans and Prefixes.
     """
 
-    _modelname = "site"
-    _identifiers = ("name",)
+    _modelname = "location"
+    _identifiers = ("uuid",)
     _children = {"vlan": "vlans", "prefix": "prefixes"}
 
-    name: str
+    uuid: str
     prefixes: List = list()
     vlans: List[str] = list()
 
@@ -35,16 +35,16 @@ class Site(DiffSyncModel):
 class Device(DiffSyncModel):
     """Device Model based on DiffSyncModel.
 
-    A device must have a unique name and can be part of a site.
+    A device must have a unique name and can be part of a location.
     """
 
     _modelname = "device"
     _identifiers = ("name",)
-    _attributes = ("site_name",)
+    _attributes = ("location_id",)
     _children = {"interface": "interfaces"}
 
     name: str
-    site_name: Optional[str]
+    location_id: Optional[str]
     interfaces: List = list()
 
     platform: Optional[str]
@@ -114,15 +114,15 @@ class IPAddress(DiffSyncModel):
 class Prefix(DiffSyncModel):
     """Prefix Model based on DiffSyncModel.
 
-    An Prefix must be associated with a Site and must be unique within a site.
+    An Prefix must be associated with a Location and must be unique within a location.
     """
 
     _modelname = "prefix"
-    _identifiers = ("site_name", "prefix")
+    _identifiers = ("location_id", "prefix")
     _attributes = ("vlan",)
 
     prefix: str
-    site_name: Optional[str]
+    location_id: Optional[str]
     vlan: Optional[str]
 
 
@@ -172,7 +172,7 @@ class Cable(DiffSyncModel):
         """Get the device name and the interface name for a given side.
 
         Args:
-            side (str): site to query, must be either a or z
+            side (str): location to query, must be either a or z
 
         Raises:
             ValueError: when the side is not either a or z
@@ -192,15 +192,15 @@ class Cable(DiffSyncModel):
 class Vlan(DiffSyncModel):
     """Vlan Model based on DiffSyncModel.
 
-    An Vlan must be associated with a Site and the vlan_id msut be unique within a site.
+    An Vlan must be associated with a Location and the vlan_id msut be unique within a location.
     """
 
     _modelname = "vlan"
-    _identifiers = ("site_name", "vid")
+    _identifiers = ("location_id", "vid")
     _attributes = ("name", "associated_devices")
 
     vid: int
-    site_name: str
+    location_id: str
     name: Optional[str]
 
     associated_devices: List[str] = list()

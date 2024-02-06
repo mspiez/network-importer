@@ -1,13 +1,13 @@
 """BaseAdapter for the network importer."""
 from diffsync import DiffSync
 from diffsync.exceptions import ObjectNotFound
-from network_importer.models import Site, Device, Interface, IPAddress, Cable, Vlan, Prefix
+from network_importer.models import Location, Device, Interface, IPAddress, Cable, Vlan, Prefix
 
 
 class BaseAdapter(DiffSync):
     """Base Adapter for the network importer."""
 
-    site = Site
+    location = Location
     device = Device
     interface = Interface
     ip_address = IPAddress
@@ -38,12 +38,12 @@ class BaseAdapter(DiffSync):
         """Load the local cache with data from the remove system."""
         raise NotImplementedError
 
-    def get_or_create_vlan(self, vlan, site=None):
+    def get_or_create_vlan(self, vlan, location=None):
         """Check if a vlan already exist before creating it. Returns the existing object if it already exist.
 
         Args:
             vlan (Vlan): Vlan object
-            site (Site, optional): Site Object. Defaults to None.
+            location (Location, optional): Location Object. Defaults to None.
 
         Returns:
             (Vlan, bool): return a tuple with the vlan and a bool to indicate of the vlan was created or not
@@ -57,8 +57,8 @@ class BaseAdapter(DiffSync):
             pass
 
         self.add(vlan)
-        if site:
-            site.add_child(vlan)
+        if location:
+            location.add_child(vlan)
 
         return vlan, True
 
