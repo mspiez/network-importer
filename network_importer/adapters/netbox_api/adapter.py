@@ -42,7 +42,7 @@ class NetBoxAPIAdapter(BaseAdapter):
     vlan = NetboxVlan
     prefix = NetboxPrefix
 
-    top_level = ["site", "device", "cable"]
+    top_level = ["location", "device", "cable"]
 
     netbox = None
     netbox_version = None

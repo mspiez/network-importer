@@ -120,7 +120,7 @@ class NautobotAPIInventory(NetworkImporterInventory):
             host.data["custom_fields"] = dev.custom_fields
             host.data["location_id"] = dev.location.id
             host.data["device_id"] = dev.id
-            host.data["role"] = dev.device_role.name
+            host.data["role"] = dev.role.name
             host.data["model"] = dev.device_type.name
 
             # Attempt to add 'platform' based of value in 'name'
@@ -137,8 +137,8 @@ class NautobotAPIInventory(NetworkImporterInventory):
             if dev.location.name not in groups.keys():
                 groups[dev.location.name] = {}
 
-            if dev.device_role.name not in groups.keys():
-                groups[dev.device_role.name] = {}
+            if dev.role.name not in groups.keys():
+                groups[dev.role.name] = {}
 
             if host.hostname and host.platform:
                 host.is_reachable = True
