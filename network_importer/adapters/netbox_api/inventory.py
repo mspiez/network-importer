@@ -100,9 +100,9 @@ class NetBoxAPIInventory(NetworkImporterInventory):
                     continue
 
             # Add value for IP address
-            if self.settings.use_primary_ip and dev.primary_ip:
-                host.hostname = dev.primary_ip.address.split("/")[0]
-            elif self.settings.use_primary_ip and not dev.primary_ip:
+            if self.settings.use_primary_ip and dev.primary_ip4:
+                host.hostname = dev.primary_ip4.address.split("/")[0]
+            elif self.settings.use_primary_ip and not dev.primary_ip4:
                 host.is_reachable = False
                 host.not_reachable_reason = "primary ip not defined in Netbox"
             elif not self.settings.use_primary_ip and self.settings.fqdn:

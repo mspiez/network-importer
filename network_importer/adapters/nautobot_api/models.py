@@ -247,7 +247,7 @@ class NautobotInterface(Interface):
         if self.ips:
             try:
                 dev = self.diffsync.get(self.diffsync.device, identifier=self.device_name)
-                if dev.primary_ip and dev.primary_ip in self.ips:
+                if dev.primary_ip4 and dev.primary_ip4 in self.ips:
                     LOGGER.warning(
                         "Unable to delete interface %s on %s, because it's currently the management interface",
                         self.name,
@@ -366,7 +366,7 @@ class NautobotIPAddress(IPAddress):
         if self.device_name:
             try:
                 dev = self.diffsync.get(self.diffsync.device, identifier=self.device_name)
-                if dev.primary_ip == self.address:
+                if dev.primary_ip4 == self.address:
                     LOGGER.warning(
                         "Unable to delete IP Address %s on %s, because it's currently the management IP address",
                         self.address,

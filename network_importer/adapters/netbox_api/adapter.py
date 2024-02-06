@@ -139,8 +139,8 @@ class NetBoxAPIAdapter(BaseAdapter):
 
             device = self.device(name=device_name, location_name=location_name, remote_id=nb_device["id"])
 
-            if nb_device["primary_ip"]:
-                device.primary_ip = nb_device["primary_ip"].get("address")
+            if nb_device["primary_ip4"]:
+                device.primary_ip4 = nb_device["primary_ip4"].get("address")
 
             device = self.apply_model_flag(device, nb_device)
             self.add(device)
