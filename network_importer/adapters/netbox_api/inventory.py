@@ -121,7 +121,7 @@ class NetBoxAPIInventory(NetworkImporterInventory):
             host.data["location_id"] = dev.location.id
             host.data["device_id"] = dev.id
             host.data["role"] = dev.role.name
-            host.data["model"] = dev.device_type.name
+            host.data["model"] = dev.device_type.model
 
             # Attempt to add 'platform' based of value in 'name'
             if dev.platform and dev.platform.name in platforms_mapping:
