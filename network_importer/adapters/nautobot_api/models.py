@@ -341,7 +341,8 @@ class NautobotIPAddress(IPAddress):
             interface = diffsync.nautobot.dcim.interfaces.get(id=interface_id)
             location_id = interface.device.location.id
             parent_prefix = diffsync.nautobot.ipam.prefixes.get(location=location_id, prefix=nb_params.get("address"))
-            nb_params["parent"] = parent_prefix.id
+            if parent_prefix:
+                nb_params["parent"] = parent_prefix.id
             print(f"nb_parms: {nb_params}")
             ip_address = diffsync.nautobot.ipam.ip_addresses.create(**nb_params)
         except pynautobot.core.query.RequestError as exc:
