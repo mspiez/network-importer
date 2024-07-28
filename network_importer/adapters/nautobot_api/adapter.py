@@ -9,7 +9,7 @@ from diffsync.exceptions import ObjectAlreadyExists, ObjectNotFound
 import network_importer.config as config  # pylint: disable=import-error
 from network_importer.adapters.base import BaseAdapter  # pylint: disable=import-error
 from network_importer.adapters.nautobot_api.models import (  # pylint: disable=import-error
-    NautobotSite,
+    NautobotLocation,
     NautobotDevice,
     NautobotInterface,
     NautobotIPAddress,
@@ -31,7 +31,7 @@ LOGGER = logging.getLogger("network-importer")
 class NautobotAPIAdapter(BaseAdapter):
     """Adapter to import Data from a Nautobot Server over its API."""
 
-    location = NautobotSite
+    location = NautobotLocation
     device = NautobotDevice
     interface = NautobotInterface
     ip_address = NautobotIPAddress
@@ -121,19 +121,19 @@ class NautobotAPIAdapter(BaseAdapter):
 
             result = items[0].result
             nb_device = result["device"]
-            location_name = nb_device["location"].get("name")
+            location_id = nb_device["location"].get("id")
 
-            if location_name not in locations:
-                location = self.location(name=location_name, remote_id=nb_device["location"].get("id"))
-                locations[location_name] = location
+            if location_id not in locations:
+                location = self.location(uuid=location_id, remote_id=location_id)
+                locations[location_id] = location
                 self.add(location)
             else:
-                location = locations[location_name]
+                location = locations[location_id]
 
-            device = self.device(name=device_name, location_name=location_name, remote_id=nb_device["id"])
+            device = self.device(name=device_name, location_id=location_id, remote_id=nb_device["id"])
 
-            # if nb_device["primary_ip"]:
-            #     device.primary_ip = nb_device["primary_ip"].get("address")
+            # if nb_device["primary_ip4"]:
+            #     device.primary_ip4 = nb_device["primary_ip4"].get("id")
 
             device = self.apply_model_flag(device, nb_device)
             self.add(device)
@@ -146,7 +146,8 @@ class NautobotAPIAdapter(BaseAdapter):
         # Load interfaces and IP addresses for each devices
         devices = self.get_all(self.device)
         for device in devices:
-            location = locations[device.location_name]
+            # print("device: ", f"{device.location}")
+            location = locations[device.location_id]
             device_names.append(device.name)
             self.load_nautobot_device(location=location, device=device)
 
@@ -158,7 +159,7 @@ class NautobotAPIAdapter(BaseAdapter):
         """Import all interfaces and IP address from Nautobot for a given device.
 
         Args:
-            location (NautobotSite): Location the device is part of
+            location (NautobotLocation): Location the device is part of
             device (DiffSyncModel): Device to import
         """
         self.load_nautobot_interface(location=location, device=device)
@@ -168,40 +169,41 @@ class NautobotAPIAdapter(BaseAdapter):
         """Import all prefixes from Nautobot for a given location.
 
         Args:
-            location (NautobotSite): Location to import prefix for
+            location (NautobotLocation): Location to import prefix for
         """
         if not config.SETTINGS.main.import_prefixes:
             return
 
-        prefixes = self.nautobot.ipam.prefixes.filter(location=location.name, status="active")
+        prefixes = self.nautobot.ipam.prefixes.filter(location=location.uuid, status="Active")
 
         for nb_prefix in prefixes:
             prefix = self.prefix(
                 prefix=nb_prefix.prefix,
-                location_name=location.name,
+                location_id=location.uuid,
                 remote_id=nb_prefix.id,
             )
             prefix = self.apply_model_flag(prefix, nb_prefix)
 
             if nb_prefix.vlan:
-                prefix.vlan = self.vlan.create_unique_id(vid=nb_prefix.vlan.vid, location_name=location.name)
-
+                prefix.vlan = self.vlan.create_unique_id(vid=nb_prefix.vlan.vid, location_id=location.uuid)
+            # print(f"Prefix Nautobot: {prefix}")
             self.add(prefix)
             location.add_child(prefix)
+        # print(f"All prefixes diffsync Nautobot: {self.get_all(self.prefix)}")
 
     def load_nautobot_vlan(self, location):
         """Import all vlans from Nautobot for a given location.
 
         Args:
-            location (NautobotSite): Location to import vlan for
+            location (NautobotLocation): Location to import vlan for
         """
         if config.SETTINGS.main.import_vlans in [False, "no"]:
             return
 
-        vlans = self.nautobot.ipam.vlans.filter(location=location.name)
+        vlans = self.nautobot.ipam.vlans.filter(location=location.uuid)
 
         for nb_vlan in vlans:
-            vlan = self.vlan.create_from_pynautobot(diffsync=self, obj=nb_vlan, location_name=location.name)
+            vlan = self.vlan.create_from_pynautobot(diffsync=self, obj=nb_vlan, location_id=location.uuid)
             self.add(vlan)
             location.add_child(vlan)
 
@@ -211,7 +213,7 @@ class NautobotAPIAdapter(BaseAdapter):
         """Convert PyNautobot interface object to NautobotInterface model.
 
         Args:
-            location (NautobotSite): [description]
+            location (NautobotLocation): [description]
             device (NautobotDevice): [description]
             intf (pynautobot interface object): [description]
         """
@@ -280,17 +282,17 @@ class NautobotAPIAdapter(BaseAdapter):
         if location and intf.tagged_vlans and import_vlans:
             for vid in [v.vid for v in intf.tagged_vlans]:
                 try:
-                    vlan = self.get(self.vlan, identifier=dict(vid=vid, location_name=location.name))
+                    vlan = self.get(self.vlan, identifier=dict(vid=vid, location_id=location.uuid))
                     interface.allowed_vlans.append(vlan.get_unique_id())
                 except ObjectNotFound:
-                    LOGGER.debug("%s | VLAN %s is not present for location %s", self.name, vid, location.name)
+                    LOGGER.debug("%s | VLAN %s is not present for location %s", self.name, vid, location)
 
         if location and intf.untagged_vlan and import_vlans:
             try:
-                vlan = self.get(self.vlan, identifier=dict(vid=intf.untagged_vlan.vid, location_name=location.name))
+                vlan = self.get(self.vlan, identifier=dict(vid=intf.untagged_vlan.vid, location_id=location.uuid))
                 interface.access_vlan = vlan.get_unique_id()
             except ObjectNotFound:
-                LOGGER.debug("%s | VLAN %s is not present for location %s", self.name, intf.untagged_vlan.vid, location.name)
+                LOGGER.debug("%s | VLAN %s is not present for location %s", self.name, intf.untagged_vlan.vid, location.uuid)
 
         if intf.connected_endpoint_type:
             interface.connected_endpoint_type = intf.connected_endpoint_type
@@ -305,7 +307,7 @@ class NautobotAPIAdapter(BaseAdapter):
         """Import all interfaces & Ips from Nautobot for a given device.
 
         Args:
-            location (NautobotSite): DiffSync object representing a location
+            location (NautobotLocation): DiffSync object representing a location
             device (NautobotDevice): DiffSync object representing the device
         """
         intfs = self.nautobot.dcim.interfaces.filter(device=device.name)
@@ -318,7 +320,7 @@ class NautobotAPIAdapter(BaseAdapter):
         """Import all IP addresses from Nautobot for a given device.
 
         Args:
-            location (NautobotSite): DiffSync object representing a location
+            location (NautobotLocation): DiffSync object representing a location
             device (NautobotDevice): DiffSync object representing the device
         """
         if not config.SETTINGS.main.import_ips:
@@ -327,8 +329,9 @@ class NautobotAPIAdapter(BaseAdapter):
         ips = self.nautobot.ipam.ip_addresses.filter(device=device.name)
         for ipaddr in ips:
             ip_address = self.ip_address.create_from_pynautobot(diffsync=self, obj=ipaddr, device_name=device.name)
+            print(f"Nautobot IP Address: {ip_address}")
             ip_address, _ = self.get_or_add(ip_address)
-
+            print(f"Nautobot IP Address Diffsync: {ip_address}")
             interface = self.get(
                 self.interface, identifier=dict(device_name=device.name, name=ip_address.interface_name)
             )
@@ -350,7 +353,7 @@ class NautobotAPIAdapter(BaseAdapter):
             location (Location): Location object to import cables for
             device_names (list): List of device names that are part of the inventory
         """
-        cables = self.nautobot.dcim.cables.filter(location=location.name)
+        cables = self.nautobot.dcim.cables.filter(location_id=location.uuid)
 
         nbr_cables = 0
         for nb_cable in cables:
@@ -404,7 +407,7 @@ class NautobotAPIAdapter(BaseAdapter):
 
             nbr_cables += 1
 
-        LOGGER.debug("%s | Found %s cables in nautobot for %s", self.name, nbr_cables, location.name)
+        LOGGER.debug("%s | Found %s cables in nautobot for %s", self.name, nbr_cables, location.uuid)
 
     def get_intf_from_nautobot(self, device_name, intf_name):
         """Get an interface from Nautobot based on the name of the device and the name of the interface.
